@@ -235,9 +235,7 @@ SDL_bool ballAtBottom(SDL_Rect *ball)
 void RespawnBall(SDL_Rect *ball)
 {
     ball->x = 200 + rand() % 50;
-    printf("ball->x: %d\n", ball->x);
     ball->y = 200 + rand() % 50;
-    printf("ball->y: %d\n", ball->y);
 }
 
 void mainLoopScene(SDL_Renderer *renderer, TTF_Font *font)
