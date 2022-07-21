@@ -3,6 +3,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <unistd.h>
+#include <time.h>
 
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 480
@@ -15,56 +16,23 @@
 
 #define MAX_SCORE 7
 
-enum GameState
+enum Scene
 {
-    PLAYING,
-    RESPAWNING,
-    ENDED
+    MAIN_MENU,
+    MAIN_LOOP,
+    GAME_OVER
 };
 
-struct Point
+enum Paddle
 {
-    int x;
-    int y;
+    PLAYER,
+    ENEMY,
+    NONE
 };
 
-struct BoundingBox
-{
-    struct Point topLeft;
-    struct Point topRight;
-    struct Point bottomLeft;
-    struct Point bottomRight;
-};
-
-void SetScreenBoundingBox(struct BoundingBox *screenBB)
-{
-    screenBB->topLeft.x = 0;
-    screenBB->topLeft.y = 0;
-
-    screenBB->topRight.x = WINDOW_WIDTH;
-    screenBB->topRight.y = 0;
-
-    screenBB->bottomLeft.x = 0;
-    screenBB->bottomLeft.y = WINDOW_HEIGHT;
-
-    screenBB->bottomRight.x = WINDOW_WIDTH;
-    screenBB->bottomRight.y = WINDOW_HEIGHT;
-}
-
-void UpdateBoundingBox(struct BoundingBox *bb, SDL_Rect *rect)
-{
-    bb->topLeft.x = rect->x;
-    bb->topLeft.y = rect->y;
-
-    bb->topRight.x = rect->x + rect->w;
-    bb->topRight.y = rect->y;
-
-    bb->bottomLeft.x = rect->x;
-    bb->bottomLeft.y = rect->y + rect->h;
-
-    bb->bottomRight.x = rect->x + rect->w;
-    bb->bottomRight.y = rect->y + rect->h;
-}
+static enum Scene currScene = MAIN_MENU;
+static enum Paddle paddleWon = NONE;
+static SDL_bool quitGame = SDL_FALSE;
 
 void Initialize(SDL_Window **window, SDL_Renderer **renderer)
 {
@@ -97,90 +65,49 @@ void Initialize(SDL_Window **window, SDL_Renderer **renderer)
 
 void DrawMiddleLine(SDL_Renderer *renderer)
 {
-    for(size_t i = 0; i < (size_t)(WINDOW_HEIGHT / 10); i++)
+    SDL_Rect stripe =
     {
-        SDL_Rect stripe =
-        {
-            .x = 310,
-            .w = 20,
-            .h = 10
-        };
-        if(i % 2 == 0)
-        {
-            stripe.y = 10 * i;
-        }
-        SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
-        SDL_RenderFillRect(renderer, &stripe);
-    }
+        .x = 310,
+        .y = 0,
+        .w = 20,
+        .h = WINDOW_HEIGHT
+    };
+    SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
+    SDL_RenderFillRect(renderer, &stripe);
+
 }
 
-int main(int argc, char *argv[])
+void mainMenuScene(SDL_Renderer *renderer, TTF_Font *font)
 {
-    SDL_Window *window = NULL;
-    SDL_Renderer *renderer = NULL;
-    SDL_bool quitGame = 0;
+    SDL_bool exitMainMenu = SDL_FALSE;
 
-    SDL_Rect playerPaddle;
-    SDL_Rect enemyPaddle;
-    SDL_Rect ball;
-
-    struct BoundingBox screenBB;
-    SetScreenBoundingBox(&screenBB);
-
-    struct BoundingBox playerPaddleBB;
-    struct BoundingBox enemyPaddleBB;
-    struct BoundingBox ballBB;
-
-    playerPaddle.x = 0;
-    playerPaddle.w = PADDLE_WIDTH;
-    playerPaddle.h = PADDLE_HEIGHT;
-
-    ball.x = 200;
-    ball.y = 200;
-    ball.w = BALL_WIDTH;
-    ball.h = BALL_HEIGHT;
-
-    int ballVelX = 1;
-    int ballVelY = 1;
-
-    int playerScore = 0;
-    int cpuScore = 0;
-
-    enemyPaddle.x = WINDOW_WIDTH - 20;
-    enemyPaddle.y = 80;
-    enemyPaddle.w = PADDLE_WIDTH;
-    enemyPaddle.h = PADDLE_HEIGHT;
-
-    Initialize(&window, &renderer);
-
-    TTF_Font *pixelFont = TTF_OpenFont("PixelFont.ttf", 24);
-    if(pixelFont == NULL)
-    {
-        printf("Unable to open ttf file with error: %s\n", TTF_GetError());
-        exit(EXIT_FAILURE);
-    }
-
+    TTF_SetFontSize(font, 24);
     SDL_Color white = {255, 255, 255};
 
-    SDL_Surface* mainLogoSurf;
-    SDL_Texture* mainLogoTexture;
+    SDL_Rect logoRect =
+    {
+        .x = 70,
+        .y = 50,
+        .w = 500,
+        .h = 200
+    };
 
-    SDL_Surface* onePlayerSurf;
-    SDL_Texture* onePlayerTexture;
+    SDL_Rect continueRect =
+    {
+        .x = 70,
+        .y = 300,
+        .w = 490,
+        .h = 50
+    };
 
-    SDL_Surface* twoPlayerSurf;
-    SDL_Texture* twoPlayerTexture;
+    SDL_Surface *mainLogoSurf = TTF_RenderText_Solid(font, "Seapong", white);
+    SDL_Texture *mainLogoTexture = 
+        SDL_CreateTextureFromSurface(renderer, mainLogoSurf);
 
-    SDL_Surface* yourScoreSurf;
-    SDL_Texture* yourScoreTexture;
+    SDL_Surface *continueSurf = TTF_RenderText_Solid(font, "Press Enter to continue", white);
+    SDL_Texture *continueTexture = SDL_CreateTextureFromSurface(renderer, continueSurf);
 
-    SDL_Surface* cpuScoreSurf;
-    SDL_Surface* cpuScoreTexture;
-
-    SDL_Surface* gameOverSurf;
-    SDL_Texture* gameOverTexture;
-
-    while(!quitGame)
+    while(!quitGame && !exitMainMenu)
     {
         SDL_Event event;
         while(SDL_PollEvent(&event))
@@ -191,120 +118,305 @@ int main(int argc, char *argv[])
                     quitGame = SDL_TRUE;
                     break;
                 case SDL_KEYDOWN:
-                    if(event.key.keysym.sym == SDLK_UP)
+                    if(event.key.keysym.sym == SDLK_RETURN)
                     {
-                        playerPaddle.y -= 10;
+                        currScene = MAIN_LOOP;
+                        exitMainMenu = SDL_TRUE;
                     }
-                    else if(event.key.keysym.sym == SDLK_DOWN)
+                    else if(event.key.keysym.sym == SDLK_ESCAPE)
                     {
-                        playerPaddle.y += 10;
+                        quitGame = SDL_TRUE;
                     }
-                    break;
                 default:
                     break;
             }
         }
         SDL_RenderClear(renderer);
 
-        // We need to move the object's position
-        // back to within the screen frame
-        if(playerPaddleBB.bottomLeft.y > screenBB.bottomLeft.y)
+        SDL_RenderCopy(renderer, continueTexture, NULL, &continueRect);
+        SDL_RenderCopy(renderer, mainLogoTexture, NULL, &logoRect);
+
+        SDL_RenderPresent(renderer);
+
+        usleep(1000);
+    }
+
+    SDL_FreeSurface(mainLogoSurf);
+    SDL_DestroyTexture(mainLogoTexture);
+
+    SDL_FreeSurface(continueSurf);
+    SDL_DestroyTexture(continueTexture);
+}
+
+void MovePaddleY(SDL_Rect *paddle, int dy)
+{
+    if(dy > 0)
+    {
+        if((WINDOW_HEIGHT - (paddle->y + paddle->h)) <= dy)
         {
-            playerPaddle.y = screenBB.bottomLeft.y - PADDLE_HEIGHT;
+            paddle->y = WINDOW_HEIGHT - paddle->h;
+            return;
+        }
+    }
+    else if(dy < 0)
+    {
+        if(paddle->y <= abs(dy))
+        {
+            paddle->y = 0;
+            return;
+        }
+    }
+    paddle->y += dy;
+}
+
+SDL_bool ballHitPaddle(SDL_Rect *ball, SDL_Rect *paddle)
+{
+    if((ball->x <= (paddle->x + PADDLE_WIDTH)) &&
+       ((ball->x + BALL_WIDTH) >= paddle->x) &&
+       (ball->y <= (paddle->y + PADDLE_HEIGHT)) &&
+       ((ball->y + BALL_HEIGHT) >= paddle->y))
+    {
+        return SDL_TRUE;
+    }
+    else
+    {
+        return SDL_FALSE;
+    }
+}
+
+SDL_bool ballAtLeftEdge(SDL_Rect *ball)
+{
+    if(ball->x <= 0)
+    {
+        return SDL_TRUE;
+    }
+    else
+    {
+        return SDL_FALSE;
+    }
+}
+
+SDL_bool ballAtRightEdge(SDL_Rect *ball)
+{
+    if((ball->x + BALL_WIDTH) >= WINDOW_WIDTH)
+    {
+        return SDL_TRUE;
+    }
+    else
+    {
+        return SDL_FALSE;
+    }
+}
+
+SDL_bool ballAtTop(SDL_Rect *ball)
+{
+    if(ball->y <= 0)
+    {
+        return SDL_TRUE;
+    }
+    else
+    {
+        return SDL_FALSE;
+    }
+}
+
+SDL_bool ballAtBottom(SDL_Rect *ball)
+{
+    if((ball->y + BALL_HEIGHT) >= WINDOW_HEIGHT)
+    {
+        return SDL_TRUE;
+    }
+    else
+    {
+        return SDL_FALSE;
+    }
+}
+
+void RespawnBall(SDL_Rect *ball)
+{
+    ball->x = 200 + rand() % 50;
+    printf("ball->x: %d\n", ball->x);
+    ball->y = 200 + rand() % 50;
+    printf("ball->y: %d\n", ball->y);
+}
+
+void mainLoopScene(SDL_Renderer *renderer, TTF_Font *font)
+{
+    int playerScore = 0;
+    int enemyScore = 0;
+
+    int ballVelX = -1;
+    int ballVelY = 1;
+
+    char buf[200];
+
+    SDL_Rect playerPaddle =
+    {
+        .x = 0,
+        .y = 0,
+        .w = PADDLE_WIDTH,
+        .h = PADDLE_HEIGHT
+    };
+
+    SDL_Rect enemyPaddle =
+    {
+        .x = (WINDOW_WIDTH - PADDLE_WIDTH),
+        .y = 0,
+        .w = PADDLE_WIDTH,
+        .h = PADDLE_HEIGHT
+    };
+
+    SDL_Rect ball =
+    {
+        .x = 200,
+        .y = 200,
+        .w = BALL_WIDTH,
+        .h = BALL_HEIGHT
+    };
+
+    SDL_Rect playerScoreRect =
+    {
+        .x = 100,
+        .y = 100,
+        .w = 100,
+        .h = 100
+    };
+
+    SDL_Rect enemyScoreRect =
+    {
+        .x = 450,
+        .y = 100,
+        .w = 100,
+        .h = 100
+    };
+
+    TTF_SetFontSize(font, 24);
+    SDL_Color white = {255, 255, 255};
+
+    SDL_Surface *playerScoreSurf = TTF_RenderText_Solid(font, "0", white);
+    SDL_Texture *playerScoreTexture = SDL_CreateTextureFromSurface(renderer, playerScoreSurf);
+
+    SDL_Surface *enemyScoreSurf = TTF_RenderText_Solid(font, "0", white);
+    SDL_Texture *enemyScoreTexture = SDL_CreateTextureFromSurface(renderer, enemyScoreSurf);
+
+    while(!quitGame)
+    {
+        SDL_Event event;
+
+        while(SDL_PollEvent(&event))
+        {
+            switch(event.type)
+            {
+            case SDL_QUIT:
+                quitGame = SDL_TRUE;
+                break;
+            case SDL_KEYDOWN:
+                if(event.key.keysym.sym == SDLK_UP)
+                {
+                    MovePaddleY(&playerPaddle, -10);
+                }
+                else if(event.key.keysym.sym == SDLK_DOWN)
+                {
+                    MovePaddleY(&playerPaddle, 10);
+                }
+                else if(event.key.keysym.sym == SDLK_ESCAPE)
+                {
+                    quitGame = SDL_TRUE;
+                }
+                break;
+            default:
+                break;
+            }
         }
 
-        if(playerPaddleBB.topLeft.y < screenBB.topLeft.y)
+        if(ballAtLeftEdge(&ball))
         {
-            playerPaddle.y = screenBB.topLeft.y;
+            enemyScore++;
+            memset(buf, '\0', sizeof(buf));
+            sprintf(buf, "%d", enemyScore);
+            enemyScoreSurf = TTF_RenderText_Solid(font, buf, white);
+            enemyScoreTexture = SDL_CreateTextureFromSurface(renderer, enemyScoreSurf);
+            if(enemyScore == MAX_SCORE)
+            {
+                paddleWon = ENEMY;
+                currScene = GAME_OVER;
+                return;
+            }
+            else
+            {
+                RespawnBall(&ball);
+                sleep(1);
+                continue;
+            }
         }
 
+        if(ballAtRightEdge(&ball))
+        {
+            playerScore++;
+            memset(buf, '\0', sizeof(buf));
+            sprintf(buf, "%d", playerScore);
+            playerScoreSurf = TTF_RenderText_Solid(font, buf, white);
+            playerScoreTexture = SDL_CreateTextureFromSurface(renderer, playerScoreSurf);
+            if(playerScore == MAX_SCORE)
+            {
+                paddleWon = PLAYER;
+                currScene = GAME_OVER;
+                return;
+            }
+            else
+            {
+                RespawnBall(&ball);
+                sleep(1);
+                continue;
+            }
+        }
 
-        ball.x += ballVelX;
-        ball.y += ballVelY;
-
-
-        if(ballBB.topLeft.x <= screenBB.topLeft.x)
+        if(ballHitPaddle(&ball, &playerPaddle))
         {
             ball.x += 5;
-            ballVelX = -ballVelX;
-        }
-
-        if(ballBB.topLeft.y <= screenBB.topLeft.y)
-        {
-            ball.y += 5;
-            ballVelY = -ballVelY;
-        }
-
-        if(ballBB.bottomRight.x >= screenBB.bottomRight.x)
-        {
-            ball.x -= 5; // Get it away from the edge
-            ballVelX = -ballVelX;
-        }
-
-        if(ballBB.bottomRight.y >= screenBB.bottomRight.y)
-        {
-            // TODO: Add some randomization to the get away value
-            ball.y -= 5; // Get it away from the edge
-            ballVelY = -ballVelY;
-        }
-
-        if((ballBB.topLeft.x <= playerPaddleBB.topRight.x) &&
-           (ballBB.topRight.x >= playerPaddleBB.bottomLeft.x) &&
-           (ballBB.topRight.y <= playerPaddleBB.bottomLeft.y) &&
-           (ballBB.bottomLeft.y >= playerPaddleBB.topRight.y))
-        {
-            ball.x += 5;
             ball.y += 5;
             ballVelX = -ballVelX;
             ballVelY = -ballVelY;
         }
 
-
-        if((ballBB.topLeft.x <= enemyPaddleBB.topRight.x) &&
-           (ballBB.topRight.x >= enemyPaddleBB.bottomLeft.x) &&
-           (ballBB.topRight.y <= enemyPaddleBB.bottomLeft.y) &&
-           (ballBB.bottomLeft.y >= enemyPaddleBB.topRight.y))
+        if(ballHitPaddle(&ball, &enemyPaddle))
         {
             ball.x -= 5;
-            ball.y -= 5;
+            ball.y += 5;
             ballVelX = -ballVelX;
+            ballVelY = -ballVelY;
+        }
+
+        if(ballAtTop(&ball))
+        {
+            ball.y += 5;
+            ballVelY = -ballVelY;
+        }
+
+        if(ballAtBottom(&ball))
+        {
+            ball.y -= 5;
             ballVelY = -ballVelY;
         }
 
         int cpuPaddleY = ball.y + (int)(PADDLE_HEIGHT / 3);
-        if(cpuPaddleY > (screenBB.bottomLeft.y - PADDLE_HEIGHT))
+        if(cpuPaddleY > (WINDOW_WIDTH - PADDLE_HEIGHT))
         {
-            cpuPaddleY = screenBB.bottomLeft.y - PADDLE_HEIGHT;
+            cpuPaddleY = WINDOW_WIDTH - PADDLE_HEIGHT;
         }
-        else if(cpuPaddleY < (screenBB.topLeft.y))
+        else if(cpuPaddleY < 0)
         {
-            cpuPaddleY = screenBB.topLeft.y;
+            cpuPaddleY = 0;
         }
-        enemyPaddle.y = cpuPaddleY;
+        enemyPaddle.y  = cpuPaddleY;
 
-        UpdateBoundingBox(&playerPaddleBB, &playerPaddle);
-        UpdateBoundingBox(&enemyPaddleBB, &enemyPaddle);
-        UpdateBoundingBox(&ballBB, &ball);
+        ball.y += ballVelY;
+        ball.x += ballVelX;
 
-        yourScoreSurf = TTF_RenderText_Solid(pixelFont, "13", white);
-        yourScoreTexture = SDL_CreateTextureFromSurface(renderer, yourScoreSurf);
+        SDL_RenderClear(renderer);
 
-        SDL_Rect yourScoreRect;
-        yourScoreRect.x = 100;
-        yourScoreRect.y = 100;
-        yourScoreRect.w = 100;
-        yourScoreRect.h = 100;
-
-        SDL_Rect cpuScoreRect;
-        cpuScoreRect.x = 450;
-        cpuScoreRect.y = 100;
-        cpuScoreRect.w = 100;
-        cpuScoreRect.h = 100;
-
-        SDL_RenderCopy(renderer, yourScoreTexture, NULL, &yourScoreRect);
-        SDL_RenderCopy(renderer, yourScoreTexture, NULL, &cpuScoreRect);
-
-        DrawMiddleLine(renderer);
+        SDL_RenderCopy(renderer, playerScoreTexture, NULL, &playerScoreRect);
+        SDL_RenderCopy(renderer, enemyScoreTexture, NULL, &enemyScoreRect);
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderFillRect(renderer, &playerPaddle);
@@ -312,19 +424,160 @@ int main(int argc, char *argv[])
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderFillRect(renderer, &enemyPaddle);
 
+        DrawMiddleLine(renderer);
+
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderFillRect(renderer, &ball);
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderPresent(renderer);
 
-        usleep(1000);
+        usleep(2000);
     }
 
-    SDL_FreeSurface(yourScoreSurf);
-    SDL_DestroyTexture(yourScoreTexture);
+    SDL_FreeSurface(playerScoreSurf);
+    SDL_DestroyTexture(playerScoreTexture);
+
+    SDL_FreeSurface(enemyScoreSurf);
+    SDL_DestroyTexture(enemyScoreTexture);
+}
+
+void gameOverScene(SDL_Renderer *renderer, TTF_Font *font)
+{
+    SDL_bool exitWinScreen = SDL_FALSE;
+
+    TTF_SetFontSize(font, 24);
+    SDL_Color white = {255, 255, 255};
+
+    char buf[200];
+
+    memset(buf, '\0', sizeof(buf));
+    if(paddleWon == PLAYER)
+    {
+        sprintf(buf, "%s", "Player wins!!!");
+    }
+    else if(paddleWon == ENEMY)
+    {
+        sprintf(buf, "%s", "Enemy wins!!!");
+    }
+
+    SDL_Surface *enemyWinSurf = TTF_RenderText_Solid(font, buf, white);
+    SDL_Texture *enemyWinTexture = SDL_CreateTextureFromSurface(renderer, enemyWinSurf);
+
+    SDL_Surface *direction1Surf = TTF_RenderText_Solid(font, "Press n to play again", white);
+    SDL_Texture *direction1Texture = SDL_CreateTextureFromSurface(renderer, direction1Surf);
+
+    SDL_Surface *direction2Surf = TTF_RenderText_Solid(font, "Press Enter to go to main menu", white);
+    SDL_Texture *direction2Texture = SDL_CreateTextureFromSurface(renderer, direction2Surf);
+
+    SDL_Rect enemyRect =
+    {
+        .x = 70,
+        .y = 50,
+        .w = 500,
+        .h = 200
+    };
+
+    SDL_Rect direction1Rect =
+    {
+        .x = 70,
+        .y = 300,
+        .w = 500,
+        .h = 50
+    };
+
+    SDL_Rect direction2Rect =
+    {
+        .x = 70,
+        .y = 400,
+        .w = 500,
+        .h = 50
+    };
+
+    SDL_RenderClear(renderer);
+
+    SDL_RenderCopy(renderer, enemyWinTexture, NULL, &enemyRect);
+    SDL_RenderCopy(renderer, direction1Texture, NULL, &direction1Rect);
+    SDL_RenderCopy(renderer, direction2Texture, NULL, &direction2Rect);
+
+    SDL_RenderPresent(renderer);
+
+    while(!quitGame && !exitWinScreen)
+    {
+        SDL_Event event;
+        while(SDL_PollEvent(&event))
+        {
+            switch(event.type)
+            {
+            case SDL_QUIT:
+                quitGame = SDL_TRUE;
+                break;
+            case SDL_KEYDOWN:
+                if(event.key.keysym.sym == SDLK_RETURN)
+                {
+                    currScene = MAIN_MENU;
+                    exitWinScreen = SDL_TRUE;
+                }
+                else if(event.key.keysym.sym == SDLK_n)
+                {
+                    currScene = MAIN_LOOP;
+                    exitWinScreen = SDL_TRUE;
+                }
+                else if(event.key.keysym.sym == SDLK_ESCAPE)
+                {
+                    quitGame = SDL_TRUE;
+                }
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
+    SDL_FreeSurface(enemyWinSurf);
+    SDL_DestroyTexture(enemyWinTexture);
+    SDL_FreeSurface(direction1Surf);
+    SDL_DestroyTexture(direction1Texture);
+    SDL_FreeSurface(direction2Surf);
+    SDL_DestroyTexture(direction2Texture);
+}
+
+int main(int argc, char *argv[])
+{
+    SDL_Window *window = NULL;
+    SDL_Renderer *renderer = NULL;
+
+    currScene = MAIN_MENU;
+
+    Initialize(&window, &renderer);
+
+    srand(time(0));
+
+    TTF_Font *pixelFont = TTF_OpenFont("PixelFont.ttf", 24);
+    if(pixelFont == NULL)
+    {
+        printf("Unable to open ttf file with error: %s\n", TTF_GetError());
+        exit(EXIT_FAILURE);
+    }
+
+    while(!quitGame)
+    {
+        switch(currScene)
+        {
+        case MAIN_MENU:
+            mainMenuScene(renderer, pixelFont);
+            break;
+        case MAIN_LOOP:
+            mainLoopScene(renderer, pixelFont);
+            break;
+        case GAME_OVER:
+            gameOverScene(renderer, pixelFont);
+        default:
+            break;
+        }
+    }
+
     SDL_DestroyWindow(window);
     SDL_DestroyRenderer(renderer);
     SDL_Quit();
-    return 0;
 }
