@@ -34,7 +34,7 @@ static enum Scene currScene = MAIN_MENU;
 static enum Paddle paddleWon = NONE;
 static SDL_bool quitGame = SDL_FALSE;
 
-void Initialize(SDL_Window **window, SDL_Renderer **renderer)
+void initialize(SDL_Window **window, SDL_Renderer **renderer)
 {
     if(SDL_Init(SDL_INIT_VIDEO) < 0)
     {
@@ -63,7 +63,7 @@ void Initialize(SDL_Window **window, SDL_Renderer **renderer)
     }
 }
 
-void DrawMiddleLine(SDL_Renderer *renderer)
+void drawMiddleLine(SDL_Renderer *renderer)
 {
     SDL_Rect stripe =
     {
@@ -148,7 +148,7 @@ void mainMenuScene(SDL_Renderer *renderer, TTF_Font *font)
     SDL_DestroyTexture(continueTexture);
 }
 
-void MovePaddleY(SDL_Rect *paddle, int dy)
+void movePaddleY(SDL_Rect *paddle, int dy)
 {
     if(dy > 0)
     {
@@ -232,7 +232,7 @@ SDL_bool ballAtBottom(SDL_Rect *ball)
     }
 }
 
-void RespawnBall(SDL_Rect *ball)
+void respawnBall(SDL_Rect *ball)
 {
     ball->x = 200 + rand() % 50;
     ball->y = 200 + rand() % 50;
@@ -311,11 +311,11 @@ void mainLoopScene(SDL_Renderer *renderer, TTF_Font *font)
             case SDL_KEYDOWN:
                 if(event.key.keysym.sym == SDLK_UP)
                 {
-                    MovePaddleY(&playerPaddle, -10);
+                    movePaddleY(&playerPaddle, -10);
                 }
                 else if(event.key.keysym.sym == SDLK_DOWN)
                 {
-                    MovePaddleY(&playerPaddle, 10);
+                    movePaddleY(&playerPaddle, 10);
                 }
                 else if(event.key.keysym.sym == SDLK_ESCAPE)
                 {
@@ -342,7 +342,7 @@ void mainLoopScene(SDL_Renderer *renderer, TTF_Font *font)
             }
             else
             {
-                RespawnBall(&ball);
+                respawnBall(&ball);
                 sleep(1);
                 continue;
             }
@@ -363,7 +363,7 @@ void mainLoopScene(SDL_Renderer *renderer, TTF_Font *font)
             }
             else
             {
-                RespawnBall(&ball);
+                respawnBall(&ball);
                 sleep(1);
                 continue;
             }
@@ -422,7 +422,7 @@ void mainLoopScene(SDL_Renderer *renderer, TTF_Font *font)
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderFillRect(renderer, &enemyPaddle);
 
-        DrawMiddleLine(renderer);
+        drawMiddleLine(renderer);
 
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderFillRect(renderer, &ball);
@@ -547,7 +547,7 @@ int main(int argc, char *argv[])
 
     currScene = MAIN_MENU;
 
-    Initialize(&window, &renderer);
+    initialize(&window, &renderer);
 
     srand(time(0));
 
